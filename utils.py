@@ -5,25 +5,69 @@ from scipy.ndimage.interpolation import zoom
 
 
 
-def load_nifti(file_path, z_factor=None, dtype=None, incl_header=False):
-    if dtype is None:
-        dt = np.float32  
-    else:
-        dt = dtype
+def load_nifti(file_path, dtype=np.float32, z_factor=None, incl_nifti=False):
+    '''
+        Function to extract a numpy matrix from a nifti file.
+
+        params:
+            file_path: (str) path to file location
+            dtype: (numpy datatype) default np.float32
+            z_factor: (float) zooming factor; if 0.5 image is reduced to half
+            incl_nifti: (boolean) if true function will also return the full 
+                         nifti, including header information
+
+        returns:
+            struct_arr: (np.ndarray) image matrix
+            img: (Nifti1Image) nifti data type
+    '''
+    # Define datatype
+    dt = dtype
+    # Load image
     img = nib.load(file_path)
     struct_arr = img.get_data().astype(dt)
+    # Downsample if required
     if z_factor is not None:
         struct_arr = np.around(zoom(struct_arr, z_factor), 0)
-    if incl_header:
+    # Return result
+    if incl_nifti:
         return struct_arr, img
     else:
         return struct_arr
 
-def load_masked_nifti(file_path, mask, sess, scan_pl, mask_pl):
+def load_masked_nifti(file_path, mask, sess, scan_pl, mask_pl, dtype=np.float32, z_factor=None):
+    '''
+        Function to extract a numpy matrix from a nifti file and apply
+        a filter mask. Using a binary mask will put zeros in the image
+        wherever the mask contains a zero.
+        
+
+        Uses tensorflow for speed up.
+        TODO: Needs to be implemented in torch as well.
+
+        params:
+            file_path: (str) path to file location
+            mask: (np.ndarray) mask matrix; same number of dimensions as the scan
+            sess: tensorflow session object
+            scan_pl: (tf.placeholder) placeholder; same shape as scan
+            mask_pl: (tf.placeholder) placeholder; same shape as mask
+            dtype: (numpy datatype) default np.float32
+            z_factor: (float) zooming factor; if 0.5 image is reduced to half
+
+        returns:
+            res: (np.ndarray) image matrix with mask applied
+    '''
+    # Import tensorflow to use local GPU memory only; prevents overflow
     import tensorflow as tf
-    struct_arr = load_nifti(file_path)
+
+    # Load image
+    struct_arr = load_nifti(file_path, dtype=dtype z_factor=z_factor)
     struct_arr[np.where(np.isnan(struct_arr))] = 0
 
+    # Downsample if required
+    if z_factor is not None:
+        struct_arr = np.around(zoom(struct_arr, z_factor), 0)
+
+    # Multiply on GPU
     c = tf.multiply(scan_pl, mask_pl)
     res = sess.run(c, feed_dict={scan_pl: struct_arr,
                                 mask_pl: mask})
