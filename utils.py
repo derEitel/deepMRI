@@ -2,11 +2,10 @@ import os
 import numpy as np
 import nibabel as nib
 from scipy.ndimage.interpolation import zoom
-import torch
-from torch.nn.modules.module import _addindent
 
 
-def load_nifti(file_path, z_factor=None, dtype=None):
+
+def load_nifti(file_path, z_factor=None, dtype=None, incl_header=False):
     if dtype is None:
         dt = np.float32  
     else:
@@ -15,7 +14,10 @@ def load_nifti(file_path, z_factor=None, dtype=None):
     struct_arr = img.get_data().astype(dt)
     if z_factor is not None:
         struct_arr = np.around(zoom(struct_arr, z_factor), 0)
-    return struct_arr
+    if incl_header:
+        return struct_arr, img
+    else:
+        return struct_arr
 
 def load_masked_nifti(file_path, mask, sess, scan_pl, mask_pl):
     import tensorflow as tf
@@ -73,31 +75,36 @@ class Normalize(object):
         tensor['image'] = tensor['image']  * (self.std + eps) + self.mean
         return tensor
 
-def torch_summarize(model, show_weights=True, show_parameters=True):
-    """Summarizes torch model by showing trainable parameters and weights.
-    Taken from wassname on Stackoverflow: https://stackoverflow.com/a/45528544
-    """
-    tmpstr = model.__class__.__name__ + ' (\n'
-    for key, module in model._modules.items():
-        # if it contains layers let call it recursively to get params and weights
-        if type(module) in [
-            torch.nn.modules.container.Container,
-            torch.nn.modules.container.Sequential
-        ]:
-            modstr = torch_summarize(module)
-        else:
-            modstr = module.__repr__()
-        modstr = _addindent(modstr, 2)
+class TorchSummarize():
+    def __init__(self):
+        import torch
+        from torch.nn.modules.module import _addindent
 
-        params = sum([np.prod(p.size()) for p in module.parameters()])
-        weights = tuple([tuple(p.size()) for p in module.parameters()])
+    def torch_summarize(self, model, show_weights=True, show_parameters=True):
+        """Summarizes torch model by showing trainable parameters and weights.
+        Taken from wassname on Stackoverflow: https://stackoverflow.com/a/45528544
+        """
+        tmpstr = model.__class__.__name__ + ' (\n'
+        for key, module in model._modules.items():
+            # if it contains layers let call it recursively to get params and weights
+            if type(module) in [
+                torch.nn.modules.container.Container,
+                torch.nn.modules.container.Sequential
+            ]:
+                modstr = torch_summarize(module)
+            else:
+                modstr = module.__repr__()
+            modstr = _addindent(modstr, 2)
 
-        tmpstr += '  (' + key + '): ' + modstr 
-        if show_weights:
-            tmpstr += ', weights={}'.format(weights)
-        if show_parameters:
-            tmpstr +=  ', parameters={}'.format(params)
-        tmpstr += '\n'   
+            params = sum([np.prod(p.size()) for p in module.parameters()])
+            weights = tuple([tuple(p.size()) for p in module.parameters()])
 
-    tmpstr = tmpstr + ')'
-    return tmpstr
+            tmpstr += '  (' + key + '): ' + modstr 
+            if show_weights:
+                tmpstr += ', weights={}'.format(weights)
+            if show_parameters:
+                tmpstr +=  ', parameters={}'.format(params)
+            tmpstr += '\n'   
+
+        tmpstr = tmpstr + ')'
+        return tmpstr
